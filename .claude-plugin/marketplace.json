@@ -1,0 +1,14 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "sero-labs",
+  "owner": {
+    "name": "sero-labs"
+  },
+  "plugins": [
+    {
+      "name": "maestro",
+      "source": "./",
+      "description": "A second opinion from any model, without leaving Claude Code."
+    }
+  ]
+}
