@@ -1,0 +1,13 @@
+{
+  "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
+  "name": "maestro",
+  "version": "0.1.0",
+  "description": "Route consult, critique, and implement work to non-Anthropic frontier models (GPT-5.6 and friends) through a local CLIProxyAPI proxy, and scaffold your own reusable flows.",
+  "author": {
+    "name": "monobyte",
+    "email": "danielrosscarter@gmail.com"
+  },
+  "skills": [
+    "./"
+  ]
+}
