@@ -90,6 +90,11 @@ It's also built to be easy on your context: it passes file *paths* to the other
 model rather than pasting in file contents, and caps what comes back — so a second
 opinion doesn't eat half your window.
 
+## Credits
+
+Inspired by [claude-roundtable](https://github.com/shujaurrehmanbaloch/claude-roundtable/)
+and [this post from Theo](https://x.com/theo/status/2075757587010929003).
+
 ## License
 
 [MIT](LICENSE)
