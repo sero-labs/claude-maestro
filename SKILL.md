@@ -51,10 +51,11 @@ default and say so.
 
 **Resolution order when the user names no model** (highest wins): a **flow's
 declared `model`** (only when you're running a custom flow that sets one) →
-`MODEL_ROUTER_MODEL` (if the user set it) → the **session default resolved at
-preflight** (the first non-Claude model the proxy actually serves) → the static
-`gpt-5.6-sol` last resort if that lookup failed. Use the resolved value without
-comment. This mirrors how `effort` resolves — a caller who *does* name a model
+`MODEL_ROUTER_MODEL` (if the user set it) → the **default resolved from the live
+`/v1/models` list** (the first non-Claude model served — the same resolution
+preflight announces and each delegate block repeats, so they agree while the
+served set is stable) → the static `gpt-5.6-sol` last resort only if that lookup
+can't be read. Use the resolved value without comment. This mirrors how `effort` resolves — a caller who *does* name a model
 still overrides everything, including a flow's `model`. Because the default is
 resolved from the live `/v1/models` list, no specific model nickname is assumed
 to exist on any given machine.
@@ -95,14 +96,21 @@ URL="${MODEL_ROUTER_URL:-http://127.0.0.1:8317}"
 KEY="$(cat "${MODEL_ROUTER_KEY_FILE:-$HOME/.cli-proxy-api/client.key}")"
 
 # 1) proxy reachable + serving models
-curl -s "$URL/v1/models" -H "Authorization: Bearer $KEY" | head -c 400; echo
+MODELS_JSON="$(curl -s "$URL/v1/models" -H "Authorization: Bearer $KEY")"
+printf '%s' "$MODELS_JSON" | head -c 400; echo
 
-# session default model: when none is configured, pick the first NON-Claude model
-# the proxy actually serves (Claude models are excluded — routing a Claude login
-# through the proxy is off-limits). gpt-5.6-sol is only a last resort if the list
-# can't be read. Announce it so the resolved default is visible.
-: "${MODEL_ROUTER_MODEL:=$(curl -s "$URL/v1/models" -H "Authorization: Bearer $KEY" | grep -oE '"id"[[:space:]]*:[[:space:]]*"[^"]*"' | cut -d'"' -f4 | grep -vi claude | head -1)}"; : "${MODEL_ROUTER_MODEL:=gpt-5.6-sol}"
-echo "SESSION DEFAULT MODEL: $MODEL_ROUTER_MODEL"
+# session default model: when none is configured, pick the first NON-Claude model the
+# proxy serves (Claude is excluded — routing a Claude login through the proxy is
+# off-limits). Distinguish "can't read the list" from "no non-Claude model available"
+# so a failure is actionable instead of silently defaulting to a nonexistent id.
+: "${MODEL_ROUTER_MODEL:=$(printf '%s' "$MODELS_JSON" | grep -oE '"id"[[:space:]]*:[[:space:]]*"[^"]*"' | cut -d'"' -f4 | grep -vi claude | head -1)}"
+if [ -n "$MODEL_ROUTER_MODEL" ]; then
+  echo "SESSION DEFAULT MODEL: $MODEL_ROUTER_MODEL"
+elif printf '%s' "$MODELS_JSON" | grep -q '"id"'; then
+  echo "NO NON-CLAUDE MODEL SERVED — the list has only Claude models. Log into a non-Claude provider (e.g. \`-codex-login\`) or set MODEL_ROUTER_MODEL. STOP — do not route Claude through the proxy."
+else
+  echo "COULD NOT READ /v1/models — proxy unreachable or auth failed; see TROUBLESHOOTING."
+fi
 
 # 2) generation actually works — catches a stale upstream login that check 1 misses
 ANTHROPIC_BASE_URL="$URL" ANTHROPIC_AUTH_TOKEN="$KEY" \

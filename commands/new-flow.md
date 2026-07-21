@@ -30,9 +30,10 @@ From `$ARGUMENTS`, work out:
   and design judgement lean `high`; mechanical flows lean `medium`.
 - **model** — almost always OMIT this. A flow with no `model` inherits the user's
   default (`MODEL_ROUTER_MODEL`), which keeps it portable across machines and lets
-  the user's own default (or a per-call choice) win. Pin a `model:` only when the
-  flow clearly runs better on one specific model AND the user asked for that — and
-  even then a caller who names a model at call time still overrides it.
+  the user's own default (or a per-call choice) win. Pin a `model:` only for a
+  flow-intrinsic reason — the flow genuinely runs better on one specific model (a
+  capability or quality fit that's part of the flow's design), not because a caller
+  mentioned one this once. A caller naming a model at call time still overrides it.
 - **prompt shape** — the templated instruction the delegate receives, ending in an
   output cap. Keep the TOKEN RULES: the prompt passes paths/numbers and the
   delegate fetches contents on its own quota.
