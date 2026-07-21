@@ -28,6 +28,11 @@ From `$ARGUMENTS`, work out:
   the dependency so it's visible.
 - **effort** — the default cognitive load (see the skill's EFFORT section). Reviews
   and design judgement lean `high`; mechanical flows lean `medium`.
+- **model** — almost always OMIT this. A flow with no `model` inherits the user's
+  default (`MODEL_ROUTER_MODEL`), which keeps it portable across machines and lets
+  the user's own default (or a per-call choice) win. Pin a `model:` only when the
+  flow clearly runs better on one specific model AND the user asked for that — and
+  even then a caller who names a model at call time still overrides it.
 - **prompt shape** — the templated instruction the delegate receives, ending in an
   output cap. Keep the TOKEN RULES: the prompt passes paths/numbers and the
   delegate fetches contents on its own quota.
@@ -35,7 +40,8 @@ From `$ARGUMENTS`, work out:
 ## 2. Confirm before writing
 
 Show the user the inferred spec compactly — name, mode, inputs, requires, effort,
-and the prompt shape — and the three files you'll create/touch. Let them correct
+model (or "inherits default" when omitted), and the prompt shape — and the three
+files you'll create/touch. Let them correct
 anything, then proceed. (If they've said "just do it" / autonomy is clearly
 wanted, write first and show the result.)
 

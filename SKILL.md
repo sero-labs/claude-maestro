@@ -20,7 +20,7 @@ the user can `/model` mid-session. This skill is for the OTHER subscriptions.
 |---|---|---|
 | `MODEL_ROUTER_URL` | `http://127.0.0.1:8317` | proxy address |
 | `MODEL_ROUTER_KEY_FILE` | `$HOME/.cli-proxy-api/client.key` | file holding the proxy API key — read at call time, never sent as-is |
-| `MODEL_ROUTER_MODEL` | `gpt-5.6-sol` | default routed model |
+| `MODEL_ROUTER_MODEL` | first non-Claude model served (resolved live at preflight; `gpt-5.6-sol` only if the list can't be read) | default routed model |
 | `MODEL_ROUTER_EFFORT` | `high` | fallback effort when the task doesn't imply one |
 
 Effort is chosen per call — see **EFFORT** below. `MODEL_ROUTER_EFFORT` is only
@@ -47,8 +47,17 @@ to the closest ID in the proxy's `/v1/models` list (e.g. "terra" →
 `gpt-5.6-terra`). Fetch the list if you haven't this session. Always state
 which model you picked ("Routing to gpt-5.6-terra") BEFORE the call, so a
 wrong guess is visible immediately. If nothing plausibly matches, use the
-default and say so. If the user names no model, use `MODEL_ROUTER_MODEL`
-(gpt-5.6-sol) without comment.
+default and say so.
+
+**Resolution order when the user names no model** (highest wins): a **flow's
+declared `model`** (only when you're running a custom flow that sets one) →
+`MODEL_ROUTER_MODEL` (if the user set it) → the **session default resolved at
+preflight** (the first non-Claude model the proxy actually serves) → the static
+`gpt-5.6-sol` last resort if that lookup failed. Use the resolved value without
+comment. This mirrors how `effort` resolves — a caller who *does* name a model
+still overrides everything, including a flow's `model`. Because the default is
+resolved from the live `/v1/models` list, no specific model nickname is assumed
+to exist on any given machine.
 
 ## EFFORT — dynamic, chosen per call
 
@@ -88,11 +97,18 @@ KEY="$(cat "${MODEL_ROUTER_KEY_FILE:-$HOME/.cli-proxy-api/client.key}")"
 # 1) proxy reachable + serving models
 curl -s "$URL/v1/models" -H "Authorization: Bearer $KEY" | head -c 400; echo
 
+# session default model: when none is configured, pick the first NON-Claude model
+# the proxy actually serves (Claude models are excluded — routing a Claude login
+# through the proxy is off-limits). gpt-5.6-sol is only a last resort if the list
+# can't be read. Announce it so the resolved default is visible.
+: "${MODEL_ROUTER_MODEL:=$(curl -s "$URL/v1/models" -H "Authorization: Bearer $KEY" | grep -oE '"id"[[:space:]]*:[[:space:]]*"[^"]*"' | cut -d'"' -f4 | grep -vi claude | head -1)}"; : "${MODEL_ROUTER_MODEL:=gpt-5.6-sol}"
+echo "SESSION DEFAULT MODEL: $MODEL_ROUTER_MODEL"
+
 # 2) generation actually works — catches a stale upstream login that check 1 misses
 ANTHROPIC_BASE_URL="$URL" ANTHROPIC_AUTH_TOKEN="$KEY" \
 CLAUDE_CODE_ALWAYS_ENABLE_EFFORT=1 ENABLE_TOOL_SEARCH=false \
 claude -p "reply with the single word: ok" \
-  --model "${MODEL_ROUTER_MODEL:-gpt-5.6-sol}" --effort low \
+  --model "$MODEL_ROUTER_MODEL" --effort low \
   --bare --max-turns 1 --output-format json \
   | grep -q '"is_error":false' && echo "PREFLIGHT OK" || echo "PREFLIGHT FAILED"
 ```
@@ -141,7 +157,8 @@ Codex login — the single most common failure.)
 | One model 5xx's but others answer | only that provider's login is down | route to a Claude model on the same proxy as a fallback |
 
 **Bisect infra vs. your task — a 3-rung ladder**, cheapest first. Where it first
-breaks tells you what's wrong:
+breaks tells you what's wrong (swap `gpt-5.6-sol` below for any model your proxy
+serves — see the `SESSION DEFAULT MODEL` line from preflight):
 
 ```bash
 # rung 1 — pure routing, ~2s. Fails → login/proxy problem, NOT your task.
@@ -160,11 +177,12 @@ silence reads as *working*, not *dead*.
 
 ```bash
 [ -f "$HOME/.cli-proxy-api/maestro.env" ] && . "$HOME/.cli-proxy-api/maestro.env"
+: "${MODEL_ROUTER_MODEL:=$(curl -s "${MODEL_ROUTER_URL:-http://127.0.0.1:8317}/v1/models" -H "Authorization: Bearer $(cat "${MODEL_ROUTER_KEY_FILE:-$HOME/.cli-proxy-api/client.key}" 2>/dev/null)" 2>/dev/null | grep -oE '"id"[[:space:]]*:[[:space:]]*"[^"]*"' | cut -d'"' -f4 | grep -vi claude | head -1)}"; : "${MODEL_ROUTER_MODEL:=gpt-5.6-sol}"
 ANTHROPIC_BASE_URL="${MODEL_ROUTER_URL:-http://127.0.0.1:8317}" \
 ANTHROPIC_AUTH_TOKEN="$(cat "${MODEL_ROUTER_KEY_FILE:-$HOME/.cli-proxy-api/client.key}")" \
 CLAUDE_CODE_ALWAYS_ENABLE_EFFORT=1 CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY=3 ENABLE_TOOL_SEARCH=false \
 claude -p "<question, with relevant file/dir PATHS for it to read>" \
-  --model "${MODEL_ROUTER_MODEL:-gpt-5.6-sol}" --effort <effort> \
+  --model "$MODEL_ROUTER_MODEL" --effort <effort> \
   --bare --max-turns 15 --output-format json \
   --disallowedTools "Edit,Write,NotebookEdit"
 ```
@@ -197,11 +215,12 @@ The remote model remembers its own session. To continue a consult/critique
 
 ```bash
 [ -f "$HOME/.cli-proxy-api/maestro.env" ] && . "$HOME/.cli-proxy-api/maestro.env"
+: "${MODEL_ROUTER_MODEL:=$(curl -s "${MODEL_ROUTER_URL:-http://127.0.0.1:8317}/v1/models" -H "Authorization: Bearer $(cat "${MODEL_ROUTER_KEY_FILE:-$HOME/.cli-proxy-api/client.key}" 2>/dev/null)" 2>/dev/null | grep -oE '"id"[[:space:]]*:[[:space:]]*"[^"]*"' | cut -d'"' -f4 | grep -vi claude | head -1)}"; : "${MODEL_ROUTER_MODEL:=gpt-5.6-sol}"
 ANTHROPIC_BASE_URL="${MODEL_ROUTER_URL:-http://127.0.0.1:8317}" \
 ANTHROPIC_AUTH_TOKEN="$(cat "${MODEL_ROUTER_KEY_FILE:-$HOME/.cli-proxy-api/client.key}")" \
 CLAUDE_CODE_ALWAYS_ENABLE_EFFORT=1 CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY=3 ENABLE_TOOL_SEARCH=false \
 claude -p --resume <session_id> "<only the new information or counterpoint>" \
-  --model "${MODEL_ROUTER_MODEL:-gpt-5.6-sol}" --effort <effort> \
+  --model "$MODEL_ROUTER_MODEL" --effort <effort> \
   --bare --max-turns 15 --output-format json \
   --disallowedTools "Edit,Write,NotebookEdit"
 ```
@@ -212,11 +231,12 @@ Never re-paste what the remote model already saw.
 
 ```bash
 [ -f "$HOME/.cli-proxy-api/maestro.env" ] && . "$HOME/.cli-proxy-api/maestro.env"
+: "${MODEL_ROUTER_MODEL:=$(curl -s "${MODEL_ROUTER_URL:-http://127.0.0.1:8317}/v1/models" -H "Authorization: Bearer $(cat "${MODEL_ROUTER_KEY_FILE:-$HOME/.cli-proxy-api/client.key}" 2>/dev/null)" 2>/dev/null | grep -oE '"id"[[:space:]]*:[[:space:]]*"[^"]*"' | cut -d'"' -f4 | grep -vi claude | head -1)}"; : "${MODEL_ROUTER_MODEL:=gpt-5.6-sol}"
 ANTHROPIC_BASE_URL="${MODEL_ROUTER_URL:-http://127.0.0.1:8317}" \
 ANTHROPIC_AUTH_TOKEN="$(cat "${MODEL_ROUTER_KEY_FILE:-$HOME/.cli-proxy-api/client.key}")" \
 CLAUDE_CODE_ALWAYS_ENABLE_EFFORT=1 CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY=3 ENABLE_TOOL_SEARCH=false \
 claude -p "<self-contained task spec>" \
-  --model "${MODEL_ROUTER_MODEL:-gpt-5.6-sol}" \
+  --model "$MODEL_ROUTER_MODEL" \
   --effort <effort — default ${MODEL_ROUTER_EFFORT:-high}> \
   --bare --max-turns 30 --permission-mode acceptEdits \
 && ls -la <expected output paths> \
@@ -238,18 +258,22 @@ only when it's actually needed so this file stays lean.
 
 **Running a custom flow.** When the user's request matches a flow in the index
 below (by name, or by its "when to use"), read that flow file. Each flow is a
-short spec: a `mode`, a default `effort`, how to normalize its inputs, and the
-prompt shape to send. It does NOT repeat the bash — you run it through the
-matching delegate call already defined above:
+short spec: a `mode`, a default `effort`, an optional preferred `model`, how to
+normalize its inputs, and the prompt shape to send. It does NOT repeat the bash —
+you run it through the matching delegate call already defined above:
 
 - `mode: read-only` → the CONSULT / CRITIQUE block (Edit/Write disallowed). Bash
   stays available, so a flow can still run `gh`, `git diff`, etc. on its own quota.
 - `mode: write` → the IMPLEMENT block (`--permission-mode acceptEdits` + the
   `&&`-verify tail).
 
-The flow supplies the *what* (prompt + effort + inputs); the *how* (env vars,
-`--resume`, the TOKEN RULES below) is unchanged. Announce model + effort before
-the call exactly as always.
+The flow supplies the *what* (prompt + effort + inputs + an optional preferred
+`model`); the *how* (env vars, `--resume`, the TOKEN RULES below) is unchanged.
+If the flow declares a `model`, substitute it literally for the `--model` value
+(exactly as you do for a caller-named model) — unless the caller named one, which
+still wins. If the flow omits `model`, leave `--model "$MODEL_ROUTER_MODEL"`
+as-is so the resolved session default applies. Announce the resolved model +
+effort before the call exactly as always.
 
 **Available flows:**
 
