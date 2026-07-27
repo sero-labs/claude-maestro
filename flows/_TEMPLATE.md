@@ -2,6 +2,7 @@
 name: <kebab-flow-name>
 mode: read-only          # read-only | write
 effort: high             # default effort: low | medium | high | xhigh | max
+model: <optional — OMIT to inherit the user's default (MODEL_ROUTER_MODEL); pin a specific routed model, e.g. gpt-5.6-terra, ONLY when this flow clearly runs better on it. A caller who names a model still overrides this. Omitting keeps the flow portable across machines.>
 inputs: <one line — what $ARGUMENTS carries: paths / a PR or issue number / a git range / free text>
 requires: <optional — external tools the delegate must run, e.g. "gh (GitHub CLI, authenticated)". Omit if none.>
 ---
@@ -22,5 +23,7 @@ requires: <optional — external tools the delegate must run, e.g. "gh (GitHub C
   - read-only flows run through SKILL.md's CONSULT/CRITIQUE delegate call;
     write flows run through the IMPLEMENT call. `mode` above selects which.
   - `effort` is the default; a caller who signals effort still overrides it.
+  - `model`, if set, is a preference the caller still overrides; if unset the
+    call inherits MODEL_ROUTER_MODEL. Same precedence shape as `effort`.
   - Keep the file short — it loads on demand, but brevity keeps it cheap.
 -->
